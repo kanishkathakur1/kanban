@@ -19,6 +19,18 @@ const (
 	done
 )
 
+/* STYLING */
+var (
+	columnStyle = lipgloss.NewStyle().
+			Padding(1, 2)
+	focusedStyle = lipgloss.NewStyle().
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62"))
+	helpStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241"))
+)
+
 /* CUSTOM ITEM */
 type Task struct {
 	status      status
@@ -41,19 +53,37 @@ func (t Task) Description() string {
 
 /* MAIN MODEL */
 type Model struct {
-	loaded  bool
-	focused status
-	lists   []list.Model
-	err     error
+	loaded   bool
+	focused  status
+	lists    []list.Model
+	err      error
+	quitting bool
 }
 
 func New() *Model {
 	return &Model{}
 }
 
+// Helper functions for navigation
+func (m *Model) Next() {
+	if m.focused == done {
+		m.focused = todo
+	} else {
+		m.focused++
+	}
+}
+
+func (m *Model) Prev() {
+	if m.focused == todo {
+		m.focused = done
+	} else {
+		m.focused--
+	}
+}
+
 // Call this on tea.WindowSizeMsg
 func (m *Model) initLists(width, height int) {
-	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor-1, height)
+	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width, height-divisor)
 	defaultList.SetShowHelp(false)
 	m.lists = []list.Model{defaultList, defaultList, defaultList}
 	// Init To Do
@@ -88,19 +118,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.initLists(msg.Width, msg.Height)
 			m.loaded = true
 		}
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "l", "right":
+			m.Next()
+		case "h", "left":
+			m.Prev()
+		}
 	}
+
 	var cmd tea.Cmd
 	m.lists[m.focused], cmd = m.lists[m.focused].Update(msg)
 	return m, cmd
 }
 
 func (m Model) View() string {
+	if m.quitting {
+		return ""
+	}
 	if m.loaded {
-		return lipgloss.JoinHorizontal(lipgloss.Left,
-			m.lists[todo].View(),
-			m.lists[inProgress].View(),
-			m.lists[done].View(),
-		)
+		todoView := m.lists[todo].View()
+		inProgView := m.lists[inProgress].View()
+		doneView := m.lists[done].View()
+
+		switch m.focused {
+		case inProgress:
+			return lipgloss.JoinHorizontal(lipgloss.Left,
+				columnStyle.Render(todoView),
+				focusedStyle.Render(inProgView),
+				columnStyle.Render(doneView),
+			)
+		case done:
+			return lipgloss.JoinHorizontal(lipgloss.Left,
+				columnStyle.Render(todoView),
+				columnStyle.Render(inProgView),
+				focusedStyle.Render(doneView),
+			)
+		default:
+			return lipgloss.JoinHorizontal(lipgloss.Left,
+				focusedStyle.Render(todoView),
+				columnStyle.Render(inProgView),
+				columnStyle.Render(doneView),
+			)
+		}
+
 	} else {
 		return "loading..."
 	}
